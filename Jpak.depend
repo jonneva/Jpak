@@ -1,0 +1,6 @@
+# depslib dependency file v1.0
+1411509645 source:c:\dev\myprojects\jpak\main.cpp
+	<stdio.h>
+	<string.h>
+	<stdlib.h>
+
