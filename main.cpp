@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 
 	int main(int argc, char *argv[])
@@ -51,13 +52,13 @@
 			return 1;
 		}
 
-        printf("BMP header\n");
+        //printf("BMP header\n");
 
 		for ( counter=0; counter < 50; counter++)
 		{
 			fseek(file,counter,SEEK_SET);
 			fread(&b,1,1,file);
-			printf("%d:%d\n",counter, b);
+			//printf("%d:%d\n",counter, b);
 		}
 
         printf("BMP info\n");
@@ -94,11 +95,11 @@
                if (c & (1<<(7-j))) val=1;
                else val = 0;
                screen[si]=val;
-               printf("%d",val);
+               //printf("%d",val);
                xcount++; si++;
                if (xcount == width) {
                     xcount=0;
-                    printf("\n");
+                    //printf("\n");
                     c=fgetc(file);
                     c=fgetc(file);
                     c=fgetc(file);
@@ -137,21 +138,28 @@
 
         val=prevval=screen[0]; runcount =0; totalbytes=0;si=0;
         char runs[500]; int numofruns=0; int numofbytes=0; int runbit=0; int runbyte = 0;
-        unsigned char maxrunlength = 255;
+        unsigned char frame=8, allowunpacked=1;
+        unsigned int maxrunlength;
+
+        if (allowunpacked) maxrunlength = pow(2,frame-1);
+        else maxrunlength = pow(2,frame)-1;
+
+        int packed =0, unpacked =0;
 
         while (si < height*width) {
-            /** FIRST CHECK IF NEXT 7 BYTES CAN BE PACKED **/
+            /** FIRST CHECK IF NEXT n=FRAME BYTES CAN BE PACKED **/
             int total=0;
-            for (int j = 0; j<7; j++) {
+            for (int j = 0; j<frame-1; j++) {
                 total += screen[si+j];
             }
 
-            if (total != 7 && total != 0) {
+            if (total != frame-1 && total != 0 && allowunpacked) {
                 /** store it as a non-packed byte **/
                 runs[runbyte] = 0;
-                for (int j =0; j<7; j++) runs[runbyte] |= (screen[si+j] << (6-j));
+                for (int j =0; j<frame-1; j++) runs[runbyte] |= (screen[si+j] << (frame-2-j));
                 printf("%d - Unpacked byte %d \n",totalbytes, runs[runbyte]);
-                runbyte++; si+=7; runcount = 0; val = screen[si]; prevval=val;
+                unpacked++;
+                runbyte++; si+=frame-1; runcount = 0; val = screen[si]; prevval=val;
             } else {
 
                 while (val == prevval && runcount < maxrunlength) {
@@ -162,7 +170,8 @@
                 }
                 totalbytes += runcount;
                 printf("%d - Found a run of %d times %d \n",totalbytes, runcount,prevval);
-                runs[runbyte] = runcount; runbyte++; numofruns++;
+                packed++;
+                runs[runbyte] =  (1 << (frame-1)) + runcount; runbyte++; numofruns++;
                 runcount=0; prevval=val;
             }
 
@@ -178,7 +187,12 @@
         }
 
         printf ("Total bytes: %d\n", runbyte);
-        printf ("Total runs: %d\n", numofruns );
+        printf ("Packing frame in bits: %d\n", frame);
+        printf ("Maximum run length in bits: %d\n", maxrunlength);
+        printf ("Unpacked bytes: %d\n", unpacked);
+        printf ("RLE-packed bytes: %d\n", packed );
+        printf ("Total bits: %d\n", (packed+unpacked)*(frame));
+        printf ("Total bytes: %d\n", (packed+unpacked)*(frame)/8);
 
         /*
         while (c != EOF) {
