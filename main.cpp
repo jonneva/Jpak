@@ -27,7 +27,7 @@
 
         // We assume argv[1] is a filename to open
         //FILE *file = fopen( buffer, "rb" );
-        FILE *file = fopen( "0.bmp", "rb" );
+        FILE *file = fopen( "sky.bmp", "rb" );
         char outputname[255];
         //sscanf(buffer,"%[^.]",outputname);  // foo.bar => foo
         //sprintf(outputname,"%s.c",outputname); // foo.c <= foo
@@ -35,7 +35,7 @@
         //free(buffer);
 
         //FILE *output = fopen( outputname, "w" );
-        FILE *output = fopen( "0.c", "w" );
+        FILE *output = fopen( "sky.c", "w" );
 
         char b;
 
@@ -81,49 +81,104 @@
 
         /** START CHECKING BITS FOR RUN LENGTH, MAXIMUM RUN IS 63 **/
 
-        char screen[504]; char bit = 0; char runcount = 0; char prevval = 0; char val = 0; int totalbytes=0;
+        char screen[5040]; char bit = 0; char runcount = 0; char prevval = 0; char val = 0; int totalbytes=0;
         int si=0;
 
         int c=fgetc(file); int xcount=0, ycount = 0;
 
+
+        /** READ BITS FROM BMP FILE **/
+
         while (c !=EOF && ycount < height) {
             for (int j = 0 ; j < 8; j++) {
-               if (c & (1<<j)) val=1;
+               if (c & (1<<(7-j))) val=1;
                else val = 0;
                screen[si]=val;
                printf("%d",val);
-               xcount++;
+               xcount++; si++;
                if (xcount == width) {
                     xcount=0;
                     printf("\n");
+                    c=fgetc(file);
+                    c=fgetc(file);
+                    c=fgetc(file);
                     ycount++;
                }
             }
             c=fgetc(file);
-            c=fgetc(file);
-            c=fgetc(file);
-            c=fgetc(file);
         }
 
-        while (c != EOF) {
-            while (val == prevval && c != EOF) {
-                prevval = val;
+        /** Flip the Y around **/
 
-                if (c & (1<<bit)) val=1;
-                else val = 0;
-
-                if (val == prevval) runcount++;
-                bit++;
-                if (bit == 8) {
-                        bit = 0;
-                        c=fgetc(file);
-                }
+        for (int sy=0; sy < height/2; sy++) {
+            for (int sx = 0; sx < width; sx++) {
+                int bytefromstart = screen[sy*width+sx];
+                int bytefromend = screen[(height*width)-sy*width - width + sx];
+                screen[sy*width+sx] = bytefromend;
+                screen[(height*width)-sy*width - width + sx] = bytefromstart;
             }
-            totalbytes += runcount;
-            printf("%d - Found a run of %d times %d \n",totalbytes, runcount,prevval);
-            runcount=0; prevval=val;
         }
 
+
+        /** PRINT THE IMAGE ON SCREEN **/
+        xcount=0;
+
+        for (si=0; si < height*width; si++) {
+               printf("%d",screen[si]);
+               xcount++;
+               if (xcount == width) {
+                    xcount=0;
+                    printf("\n");
+               }
+        }
+
+
+        /** FINDING RUNS AND STORING THEM **/
+
+        val=prevval=screen[0]; runcount =0; totalbytes=0;si=0;
+        char runs[500]; int numofruns=0; int numofbytes=0; int runbit=0; int runbyte = 0;
+        unsigned char maxrunlength = 255;
+
+        while (si < height*width) {
+            /** FIRST CHECK IF NEXT 7 BYTES CAN BE PACKED **/
+            int total=0;
+            for (int j = 0; j<7; j++) {
+                total += screen[si+j];
+            }
+
+            if (total != 7 && total != 0) {
+                /** store it as a non-packed byte **/
+                runs[runbyte] = 0;
+                for (int j =0; j<7; j++) runs[runbyte] |= (screen[si+j] << (6-j));
+                printf("%d - Unpacked byte %d \n",totalbytes, runs[runbyte]);
+                runbyte++; si+=7; runcount = 0; val = screen[si]; prevval=val;
+            } else {
+
+                while (val == prevval && runcount < maxrunlength) {
+                    prevval = val;
+                    if (val == prevval) runcount++;
+                    si++;
+                    val = screen[si];
+                }
+                totalbytes += runcount;
+                printf("%d - Found a run of %d times %d \n",totalbytes, runcount,prevval);
+                runs[runbyte] = runcount; runbyte++; numofruns++;
+                runcount=0; prevval=val;
+            }
+
+        }
+
+        //runs[1] = runbyte & 0xFF;
+        //runs[0] = runbyte >> 8;
+        //runs[3] = numofruns & 0xFF;
+        //runs[2] = numofruns >> 8;
+
+        for (int j = 0; j < numofruns; j++) {
+            //printf("%d\n",runs[j]);
+        }
+
+        printf ("Total bytes: %d\n", runbyte);
+        printf ("Total runs: %d\n", numofruns );
 
         /*
         while (c != EOF) {
