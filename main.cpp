@@ -8,9 +8,9 @@
 	{
 		unsigned int counter;
 		char *buffer; unsigned int height=0;
-        unsigned int width=0;
+        int width=0, width2=0;
 
-        char depth;
+        char depth, dummy=0;
 
         if ( argc != 2 ) /* argc should be 2 for correct execution */
         {
@@ -28,7 +28,7 @@
 
         // We assume argv[1] is a filename to open
         //FILE *file = fopen( buffer, "rb" );
-        FILE *file = fopen( "sky.bmp", "rb" );
+        FILE *file = fopen( "maniax.bmp", "rb" );
         char outputname[255];
         //sscanf(buffer,"%[^.]",outputname);  // foo.bar => foo
         //sprintf(outputname,"%s.c",outputname); // foo.c <= foo
@@ -36,7 +36,7 @@
         //free(buffer);
 
         //FILE *output = fopen( outputname, "w" );
-        FILE *output = fopen( "sky.c", "w" );
+        FILE *output = fopen( "maniax.c", "w" );
 
         char b;
 
@@ -66,6 +66,12 @@
         //rewind(file);
         fseek(file,18,SEEK_SET); fread(&width,1,1,file);
         printf("Image width (18): %d\n", width);
+        //dummy = width %32;
+        width2 = (width/4);
+        if (width2%2) width2++;
+        width2 *= 4;
+        dummy=width2-width;
+        printf("Padding bytes : %d\n", dummy);
         fseek(file,22,SEEK_SET); fread(&height,1,1,file);
         printf("Image height (22): %d\n", height);
         fseek(file,28,SEEK_SET); fread(&depth,1,1,file);
@@ -76,37 +82,46 @@
 
         // PRINTING THE INFORMATION INTO THE C FILE
 
-        fprintf(output,"%d,",width); fprintf(output,"%d,\n",height);
-
         fseek(file,counter,SEEK_SET);
 
         /** START CHECKING BITS FOR RUN LENGTH, MAXIMUM RUN IS 63 **/
 
-        char screen[5040]; char bit = 0; char runcount = 0; char prevval = 0; char val = 0; int totalbytes=0;
+        char screen[50000]; char bit = 0; int runcount = 0; char prevval = 0; char val = 0; int totalbytes=0;
         int si=0;
 
-        int c=fgetc(file); int xcount=0, ycount = 0;
+        int c=1; int xc=0, ycount = 0;
 
 
         /** READ BITS FROM BMP FILE **/
 
         while (c !=EOF && ycount < height) {
+            c=fgetc(file);
+
+            if (xc >= width) {
+                    if (dummy == 0) {
+                        printf("\n");
+                        xc = 0;
+                        ycount++;
+                    } else {
+                        printf(".");
+                        if (xc == width+dummy) {
+                            xc=0;
+                            printf("\n");
+                            ycount++;
+                            }
+                    }
+            }
+
             for (int j = 0 ; j < 8; j++) {
                if (c & (1<<(7-j))) val=1;
                else val = 0;
                screen[si]=val;
-               //printf("%d",val);
-               xcount++; si++;
-               if (xcount == width) {
-                    xcount=0;
-                    //printf("\n");
-                    c=fgetc(file);
-                    c=fgetc(file);
-                    c=fgetc(file);
-                    ycount++;
+               printf("%d",val);
+               //printf("%d",j);
+               si++;
+               xc++;
                }
-            }
-            c=fgetc(file);
+
         }
 
         /** Flip the Y around **/
@@ -122,13 +137,13 @@
 
 
         /** PRINT THE IMAGE ON SCREEN **/
-        xcount=0;
+        xc=0;
 
         for (si=0; si < height*width; si++) {
                printf("%d",screen[si]);
-               xcount++;
-               if (xcount == width) {
-                    xcount=0;
+               xc++;
+               if (xc == width) {
+                    xc=0;
                     printf("\n");
                }
         }
@@ -137,11 +152,11 @@
         /** FINDING RUNS AND STORING THEM **/
 
         val=prevval=screen[0]; runcount =0; totalbytes=0;si=0;
-        char runs[500]; int numofruns=0; int numofbytes=0; int runbit=0; int runbyte = 0;
+        unsigned char runs[5000]; int numofruns=0; int numofbytes=0; int runbit=0; int runbyte = 0;
         unsigned char frame=8, allowunpacked=1;
         unsigned int maxrunlength;
 
-        if (allowunpacked) maxrunlength = pow(2,frame-1);
+        if (allowunpacked) maxrunlength = pow(2,frame-2)-1;
         else maxrunlength = pow(2,frame)-1;
 
         int packed =0, unpacked =0;
@@ -155,14 +170,14 @@
 
             if (total != frame-1 && total != 0 && allowunpacked) {
                 /** store it as a non-packed byte **/
-                runs[runbyte] = 0;
+                runs[runbyte] = 0; // First bit is zero if unpacked byte
                 for (int j =0; j<frame-1; j++) runs[runbyte] |= (screen[si+j] << (frame-2-j));
                 printf("%d - Unpacked byte %d \n",totalbytes, runs[runbyte]);
                 unpacked++;
                 runbyte++; si+=frame-1; runcount = 0; val = screen[si]; prevval=val;
             } else {
 
-                while (val == prevval && runcount < maxrunlength) {
+                while (val == prevval && runcount < maxrunlength && si < width*height ) {
                     prevval = val;
                     if (val == prevval) runcount++;
                     si++;
@@ -171,19 +186,11 @@
                 totalbytes += runcount;
                 printf("%d - Found a run of %d times %d \n",totalbytes, runcount,prevval);
                 packed++;
-                runs[runbyte] =  (1 << (frame-1)) + runcount; runbyte++; numofruns++;
+                // the following puts 1 into bit frame-1 to signify RLE packing and 0 or 1 in next bit for color
+                runs[runbyte] =  (1 << (frame-1)) + (prevval << (frame-2)) + runcount; runbyte++; numofruns++;
                 runcount=0; prevval=val;
             }
 
-        }
-
-        //runs[1] = runbyte & 0xFF;
-        //runs[0] = runbyte >> 8;
-        //runs[3] = numofruns & 0xFF;
-        //runs[2] = numofruns >> 8;
-
-        for (int j = 0; j < numofruns; j++) {
-            //printf("%d\n",runs[j]);
         }
 
         printf ("Total bytes: %d\n", runbyte);
@@ -193,23 +200,27 @@
         printf ("RLE-packed bytes: %d\n", packed );
         printf ("Total bits: %d\n", (packed+unpacked)*(frame));
         printf ("Total bytes: %d\n", (packed+unpacked)*(frame)/8);
+        printf ("Unpacked size: %d\n", width*height/8);
+        printf ("Compression result: %f %\n", float(float((packed+unpacked)*(frame)/8)/float(width*height/8)*100));
 
-        /*
-        while (c != EOF) {
-            fprintf(output,"0x%X",c);
-            c=fgetc(file);
 
-            if (c != EOF) {
-                fprintf(output,",");
-                countx++;
+        /** OUTPUT RUNS TO FILE **/
 
-                if (countx==width) {
-                    fprintf(output,"\n");
-                    countx=0;
-                    }
+        int countx =0;
+        fprintf(output,"%d,%d,%d,%d,\n",width,height,frame,allowunpacked);
+
+        for (int j=0; j < packed+unpacked; j++) {
+
+            fprintf(output,"0x%X",runs[j]);
+            fprintf(output,",");
+            countx++;
+            if (countx==width/8) {
+                fprintf(output,"\n");
+                countx=0;
                 }
+
         }
-        */
+
         fclose(file);
         fclose(output);
 		return 0;
