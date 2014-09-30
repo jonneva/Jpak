@@ -67,9 +67,9 @@
         fseek(file,18,SEEK_SET); fread(&width,1,1,file);
         printf("Image width (18): %d\n", width);
         //dummy = width %32;
-        width2 = (width/4);
-        if (width2%2) width2++;
-        width2 *= 4;
+        width2 = (width/32);
+        if (width2*32 < width ) width2++;
+        width2 *= 32;
         dummy=width2-width;
         printf("Padding bytes : %d\n", dummy);
         fseek(file,22,SEEK_SET); fread(&height,1,1,file);
@@ -108,20 +108,21 @@
                             xc=0;
                             printf("\n");
                             ycount++;
-                            }
+                        }
                     }
             }
+
 
             for (int j = 0 ; j < 8; j++) {
                if (c & (1<<(7-j))) val=1;
                else val = 0;
-               screen[si]=val;
-               printf("%d",val);
-               //printf("%d",j);
-               si++;
+               if (xc < width) {
+                    screen[si]=val;
+                    printf("%d",val);
+                    si++;
+               } else printf(".");
                xc++;
                }
-
         }
 
         /** Flip the Y around **/
