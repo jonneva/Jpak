@@ -1,0 +1,36 @@
+// Put this into the .ino file
+
+#include "jpak.h"
+
+
+
+void drawJpak (int8_t x, int8_t y, const unsigned char * bmp, byte fader=1) {
+    int8_t width,col, sx=x, sy=y, fstep = 0;
+    uint16_t size;
+    Jpak js(bmp);
+    width = js.getWidth();
+    size = js.getSize();
+
+    while (fader) {
+        x = sx; y = sy;
+        col =0;
+        js.rewindStream();
+
+        for (uint16_t pixel = 0; pixel < size; pixel++ ) {
+            if (x == sx+width) {
+                x =sx;
+                y++;
+            }
+            uint8_t col = js.readNextPixel();
+            fstep++;
+            if (fstep>=fader) {
+                    Game.set_pixel(x,y,col);
+                    fstep=0;
+            }
+            x++;
+
+        }
+        fader--;
+        Game.refresh();
+        }
+}
