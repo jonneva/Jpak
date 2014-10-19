@@ -3,40 +3,54 @@
 #include <stdlib.h>
 #include <math.h>
 
+#define NODEBUG 1
 
 	int main(int argc, char *argv[])
 	{
+        unsigned char frame=8, allowunpacked=1;
 		unsigned int counter;
 		char *buffer; unsigned int height=0;
         int width=0, width2=0;
 
         char depth, dummy=0;
+        char outputname[255];
 
-        if ( argc != 2 ) /* argc should be 2 for correct execution */
+
+        #ifdef NODEBUG
+        if ( argc < 2 ) /* argc should be 2 for correct execution */
         {
         /* We print argv[0] assuming it is the program name */
-        printf( "usage: %s filename[.bmp]", argv[0] );
-        //return 0;
+            printf( "usage: %s filename[.bmp] [frame size in bits] [allow unpacked]", argv[0] );
+            return 0;
         }
 
         printf("Opening BMP file\n");
 
-        //buffer = (char*)malloc(strlen(argv[1]) + 5);
-        //strcpy(buffer,argv[1]);
+        buffer = (char*)malloc(strlen(argv[1]) + 5);
+        strcpy(buffer,argv[1]);
 
-        //if (!strstr(buffer,".bmp")) strcat(buffer,".bmp");
+        if (!strstr(buffer,".bmp")) strcat(buffer,".bmp");
 
         // We assume argv[1] is a filename to open
-        //FILE *file = fopen( buffer, "rb" );
+        FILE *file = fopen( buffer, "rb" );
+
+
+        sscanf(buffer,"%[^.]",outputname);  // foo.bar => foo
+        sprintf(outputname,"%s.c",outputname); // foo.c <= foo
+
+        free(buffer);
+
+        FILE *output = fopen( outputname, "w" );
+
+        //if (atoi(argv[2])>3 && atoi(argv[2])<3) frame = atoi(argv[2]);
+        //if (atoi(argv[3])==0 || atoi(argv[3])==1) allowunpacked = atoi(argv[3]);
+
+        #else
+
         FILE *file = fopen( "maniax.bmp", "rb" );
-        char outputname[255];
-        //sscanf(buffer,"%[^.]",outputname);  // foo.bar => foo
-        //sprintf(outputname,"%s.c",outputname); // foo.c <= foo
-
-        //free(buffer);
-
-        //FILE *output = fopen( outputname, "w" );
         FILE *output = fopen( "maniax.c", "w" );
+
+        #endif
 
         char b;
 
@@ -154,13 +168,15 @@
 
         val=prevval=screen[0]; runcount =0; totalbytes=0;si=0;
         unsigned char runs[5000]; int numofruns=0; int numofbytes=0; int runbit=0; int runbyte = 0;
-        unsigned char frame=8, allowunpacked=1;
         unsigned int maxrunlength;
 
         if (allowunpacked) maxrunlength = pow(2,frame-2)-1;
-        else maxrunlength = pow(2,frame)-1;
+        else maxrunlength = pow(2,frame-1)-1;
 
         int packed =0, unpacked =0;
+
+        unsigned int tempframe=0; // for storing the frame temporarily until it is written to the bitstream
+        runbit = 7;
 
         while (si < height*width) {
             /** FIRST CHECK IF NEXT n=FRAME BYTES CAN BE PACKED **/
@@ -171,11 +187,16 @@
 
             if (total != frame-1 && total != 0 && allowunpacked) {
                 /** store it as a non-packed byte **/
-                runs[runbyte] = 0; // First bit is zero if unpacked byte
-                for (int j =0; j<frame-1; j++) runs[runbyte] |= (screen[si+j] << (frame-2-j));
-                printf("%d - Unpacked byte %d \n",totalbytes, runs[runbyte]);
+                //runs[runbyte] = 0; // First bit is zero if unpacked byte
+                tempframe = 0;
+                //for (int j =0; j<frame-1; j++) runs[runbyte] |= (screen[si+j] << (frame-2-j));
+                for (int j =0; j<frame-1; j++) tempframe |= (screen[si+j] << (frame-2-j));
+                printf("%d - Unpacked byte %d \n",totalbytes, tempframe);
+
+
+                //printf("%d - Unpacked byte %d \n",totalbytes, runs[runbyte]);
                 unpacked++;
-                runbyte++; si+=frame-1; runcount = 0; val = screen[si]; prevval=val;
+                si+=frame-1; runcount = 0; val = screen[si]; prevval=val;
             } else {
 
                 while (val == prevval && runcount < maxrunlength && si < width*height ) {
@@ -184,12 +205,24 @@
                     si++;
                     val = screen[si];
                 }
+
                 totalbytes += runcount;
                 printf("%d - Found a run of %d times %d \n",totalbytes, runcount,prevval);
                 packed++;
+                tempframe = 0;
                 // the following puts 1 into bit frame-1 to signify RLE packing and 0 or 1 in next bit for color
-                runs[runbyte] =  (1 << (frame-1)) + (prevval << (frame-2)) + runcount; runbyte++; numofruns++;
+                //runs[runbyte] =  (1 << (frame-1)) + (prevval << (frame-2)) + runcount; runbyte++; numofruns++;
+                tempframe = (1 << (frame-1)) + (prevval << (frame-2)) + runcount; // RLE
+                numofruns++;
                 runcount=0; prevval=val;
+            }
+
+            /** Copy TEMPFRAME to BITSTREAM **/
+            for (char bs = frame; bs > 0 ; bs--) {
+                    char val = tempframe & (1<<(bs-1)) ? 1:0;
+                    runs[runbyte] |= (val << runbit);
+                    runbit--;
+                    if (runbit == -1) { runbyte ++; runbit =7;}
             }
 
         }
@@ -200,7 +233,8 @@
         printf ("Unpacked bytes: %d\n", unpacked);
         printf ("RLE-packed bytes: %d\n", packed );
         printf ("Total bits: %d\n", (packed+unpacked)*(frame));
-        printf ("Total bytes: %d\n", (packed+unpacked)*(frame)/8);
+        printf ("Calculated bytes: %d\n", (packed+unpacked)*(frame)/8);
+        printf ("Counted runbytes: %d\n", runbyte);
         printf ("Unpacked size: %d\n", width*height/8);
         printf ("Compression result: %f %\n", float(float((packed+unpacked)*(frame)/8)/float(width*height/8)*100));
 
@@ -210,7 +244,7 @@
         int countx =0;
         fprintf(output,"%d,%d,%d,%d,\n",width,height,frame,allowunpacked);
 
-        for (int j=0; j < packed+unpacked; j++) {
+        for (int j=0; j < runbyte; j++) {
 
             fprintf(output,"0x%X",runs[j]);
             fprintf(output,",");
